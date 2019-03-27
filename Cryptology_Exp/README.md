@@ -1,5 +1,5 @@
 # Cryptology_Exp
-山东大学信息安全导论实验
+信息安全导论实验
 
 * 古典密码
    * [移位密码](code/Classical/Shift_cryption.cpp)
