@@ -1,3 +1,5 @@
+import numpy as np 
+
 S = [
     [0x63, 0x7c, 0x77, 0x7b, 0xf2, 0x6b, 0x6f, 0xc5, 0x30, 0x01, 0x67, 0x2b, 0xfe, 0xd7, 0xab, 0x76],
     [0xca, 0x82, 0xc9, 0x7d, 0xfa, 0x59, 0x47, 0xf0, 0xad, 0xd4, 0xa2, 0xaf, 0x9c, 0xa4, 0x72, 0xc0],
@@ -34,6 +36,17 @@ S_1 = [
     [160, 224, 59, 77, 174, 42, 245, 176, 200, 235, 187, 60, 131, 83, 153, 97],
     [23, 43, 4, 126, 186, 119, 214, 38, 225, 105, 20, 99, 85, 33, 12, 125]
 ]
+Rcon = [[0x01,0x00,0x00,0x00],
+        [0x02,0x00,0x00,0x00],
+        [0x04,0x00,0x00,0x00],
+        [0x08,0x00,0x00,0x00],
+        [0x10,0x00,0x00,0x00],
+        [0x20,0x00,0x00,0x00],
+        [0x40,0x00,0x00,0x00],
+        [0x80,0x00,0x00,0x00],
+        [0x1b,0x00,0x00,0x00],
+        [0x36,0x00,0x00,0x00]]
+
 #循环左移
 def LeftRotate(line,n):
     new_line = line[n:]
@@ -41,13 +54,63 @@ def LeftRotate(line,n):
         new_line.append(line[i])
     return new_line
 
-#读入明文
+#读入文件
 def inputText(filename):
     with open(filename,'r')as f:
         text = f.read()
-    
+    text = text.split('\n')
+    text = [eval(x) for x in text]
+    return text
+
+#轮密钥加,输入为4x4矩阵
+def AddRoundKey(state,w):
+    w = np.array(w)
+    w = w.T
+    new_state = []
+    for i in range(len(state)):
+        s = [state[i][j] ^ w[i][j] for j in range(len(state[i]))]
+        new_state.append(s)
+    return new_state
+
+#加轮密钥
+def RoundKeyAdd(state,w):
+    w = np.array(w)
+    new_state = []
+    for i in range(len(state)):
+        s = [state[i][j] ^ w[i][j] for j in range(len(state[i]))]
+        new_state.append(s)
+    return new_state
+
+#字代替
+def SubWord(w):
+    new_w = [S[int(x/16)][x%16] for x in w]
+    return new_w
+
+#两个list中元素异或
+def xor(a,b):
+    s = []
+    for i in range(len(a)):
+        s.append(a[i] ^ b[i])
+    return s
+
+#密钥扩展
+def KeyExpansion(key):
+    w = []
+    for i in range(0,4):
+        w.append(key[4*i])
+        w.append(key[4*i+1])
+        w.append(key[4*i+2])
+        w.append(key[4*i+3])
+    for i in range(4,44):
+        tmp = w[4*(i-1):4*i]
+        if i%4==0:
+            tmp = xor(SubWord(LeftRotate(tmp,1)),Rcon[int(i/4)-1])
+        new_w = xor(w[4*(i-4):4*(i-3)],tmp)
+        w = w+new_w
+    return w
+
 #字节代替变换
-def Byte_Substitution(state):
+def SubBytes(state):
     new_s = []
     for l in state:
         row = [S[int(x/16)][x%16] for x in l]
@@ -58,6 +121,7 @@ def Byte_Substitution(state):
 def positive_Shift(state):
     n=1
     new_s = []
+    new_s.append(state[0])
     for l in state[1:]:
         new_s.append(LeftRotate(l,n))
         n=n+1
@@ -67,10 +131,161 @@ def positive_Shift(state):
 def negetive_Shift(state):
     n=3
     new_s = []
+    new_s.append(state[0])
     for l in state[1:]:
         new_s.append(LeftRotate(l,n))
         n=n-1
     return new_s
 
+#列混淆元素乘法运算
+def mul(a):
+    ashift = (a<<1)%0x100
+    if (a&0x80 == 0):
+        return ashift
+    else:
+        return ashift^0x1b
+#列混淆
+def MixMatrix(state):
+    new_state = []
+    for i in range(len(state)):
+        s = []
+        for j in range(len(state[i])):
+            r = (mul(state[i%4][j])
+                    ^mul(state[(i+1)%4][j])^state[(i+1)%4][j]
+                    ^(state[(i+2)%4][j])
+                    ^(state[(i+3)%4][j]))
+            s.append(r)
+        new_state.append(s)
+    return new_state
+
+#逆字节代替
+def Rev_SubBytes(state):
+    new_s = []
+    for l in state:
+        row = [S_1[int(x/16)][x%16] for x in l]
+        new_s.append(row)
+    return new_s
+
+#逆列混淆 
+def Rev_MixMatrix(state):
+    new_state = []
+    for i in range(len(state)):
+        s = []
+        for j in range(len(state[i])):
+            r = (mul(mul(mul(state[i%4][j])))^mul(mul(state[i%4][j]))^mul(state[i%4][j])    #0x0e
+                    ^mul(mul(mul(state[(i+1)%4][j])))^mul(state[(i+1)%4][j])^state[(i+1)%4][j]#0x0b
+                    ^mul(mul(mul(state[(i+2)%4][j])))^mul(mul(state[(i+2)%4][j]))^state[(i+2)%4][j]#0x0d
+                    ^mul(mul(mul(state[(i+3)%4][j])))^state[(i+3)%4][j]#0x09
+                    )
+            s.append(r)
+        new_state.append(s)
+    return new_state
+#将密文写入文件
+def writeFile(filename,Cipher):
+    f = open(filename,'w+')
+    for i in range(len(Cipher)-1):
+        f.write(Cipher[i]+'\n')
+    f.write(Cipher[-1])
+
+#AES加密    
+def AES_Encrypt(ptfile,keyfile,cipherfile):
+    #读入明文
+    plaintext = inputText(ptfile)
+    print('明文: ',[hex(x) for x in plaintext])
+    plaintext = np.array(plaintext)
+    plaintext = plaintext.reshape(4,4)
+    #求转置
+    plaintext = plaintext.T
+    #读入密钥
+    key = inputText(keyfile)
+    #密钥扩展
+    w = KeyExpansion(key)
+    new_w = []
+    for i in range(0,int(len(w)/4)):
+        new_w.append(w[4*i:4*i+4])
+    w = new_w
+    #加密过程#
+    #第一次轮密钥加
+    state = AddRoundKey(plaintext,w[0:4][:])
+    #9轮四步变换
+    for i in range(1,10):
+        state = SubBytes(state)
+        state = positive_Shift(state)
+        state = MixMatrix(state)
+        state = AddRoundKey(state,w[4*i:4*(i+1)][:])
+
+    #第10三步变换
+    state = SubBytes(state)
+    state = positive_Shift(state)
+    state = AddRoundKey(state,w[40:44][:])
+
+    Cipher = []
+    for l in state:
+        Cipher+=(['0x{:02x}'.format(x) for x in l])
+    print('加密后的密文: ',Cipher)
+    writeFile(cipherfile,Cipher)
+
+#AES解密
+def AES_Decrypt(cipherfile,keyfile,ptfile):
+    #读入密文
+    ciphertext = inputText(cipherfile)
+    ciphertext = np.array(ciphertext)
+    ciphertext = ciphertext.reshape(4,4)
+    # print('密文')
+    # for l in ciphertext:
+    #     print([hex(x) for x in l])
+    # print('---------------------------------------')
+    #读入密钥
+    key = inputText(keyfile)
+    #密钥扩展
+    w = KeyExpansion(key)
+    new_w = []
+    for i in range(0,int(len(w)/4)):
+        new_w.append(w[4*i:4*i+4])
+    w = new_w
+    #解密过程
+    #第一次轮密钥加
+    state =AddRoundKey(ciphertext,w[40:44][:])
+
+    #9轮四步变换
+    for i in range(9,0,-1):
+        state = negetive_Shift(state)
+        # print('逆向移位: ')
+        # for l in state:
+        #     print([hex(x) for x in l])
+        # print('-----------------------------------------')
+
+        state = Rev_SubBytes(state)
+        # print('逆向字节代替:' )
+        # for l in state:
+        #     print([hex(x) for x in l])
+        # print('-----------------------------------------')
+
+        state = AddRoundKey(state,w[4*i:4*(i+1)])
+        # print('加轮密钥: ')
+        # for l in state:
+        #     print([hex(x) for x in l])
+        # print('-----------------------------------------')
+
+        state = Rev_MixMatrix(state)
+        # print('逆向列混淆: ')
+        # for l in state:
+        #     print([hex(x) for x in l])
+        # print('-----------------------------------------')
+        
+        
+    #第10轮三步变换
+    state = negetive_Shift(state)
+    state = Rev_SubBytes(state)
+    state = AddRoundKey(state,w[0:4])
+    state = np.array(state).T
+    plaintext = []
+    for l in state:
+        plaintext+=(['0x{:02x}'.format(x) for x in l])
+    print('解密后的明文: ',plaintext)
+    writeFile(ptfile,plaintext)
+            
+
 if __name__ == "__main__":
-    
+    AES_Encrypt('plaintext.txt','key.txt','Cipher.txt')
+    AES_Decrypt('Cipher.txt','key.txt','de_pliantext.txt')
