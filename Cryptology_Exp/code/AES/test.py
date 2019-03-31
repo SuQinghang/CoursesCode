@@ -1,0 +1,1 @@
+print(hex(0x69 ^ 0xf3))
