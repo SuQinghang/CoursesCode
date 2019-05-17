@@ -65,7 +65,6 @@ def CS_LineClip(line):
     return [x1,x2,y1,y2]
 
 
-
 #中点分割裁剪算法  
 def MidPointClip(line):
     x1 = line[0]
