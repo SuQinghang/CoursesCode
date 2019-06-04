@@ -1,6 +1,5 @@
 # <center>算法导论实验报告<center>
 
-#### 							<center>201600130072  苏庆杭<center>
 
 ## [Problem1](DFS.py)
 
